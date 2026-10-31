@@ -1,0 +1,71 @@
+name: flume-hbase-tutorial
+
+services:
+  # Standalone HBase: Master + RegionServer + ZooKeeper in one container.
+  hbase:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: hbase
+    image: flume-hbase-tutorial/hbase
+    container_name: hbase
+    # Region servers register under their hostname in ZooKeeper, and the Flume
+    # container must be able to resolve it. Fixing it to "hbase" does that.
+    hostname: hbase
+    ports:
+      - "${HBASE_UI_PORT:-16011}:16010" # HBase Master web UI
+    volumes:
+      - ./conf/hbase-site.xml:/opt/hbase/conf/hbase-site.xml:ro
+      - hbase-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:16010/master-status"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+
+  # One-shot job: creates the table the Flume sink writes into, then exits.
+  hbase-init:
+    image: flume-hbase-tutorial/hbase
+    container_name: hbase-init
+    command: ["init-table.sh"]
+    volumes:
+      - ./conf/hbase-site.xml:/opt/hbase/conf/hbase-site.xml:ro
+    depends_on:
+      hbase:
+        condition: service_healthy
+    restart: "no"
+
+  # The Flume agent: tails the log file and writes events into HBase.
+  flume:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: flume
+    image: flume-hbase-tutorial/flume
+    container_name: flume
+    ports:
+      - "${FLUME_METRICS_PORT:-34545}:34545" # Flume JSON metrics (http monitoring)
+    volumes:
+      - ./flume/flume.conf:/opt/flume/conf/flume.conf:ro
+      - ./conf/hbase-site.xml:/opt/hbase/conf/hbase-site.xml:ro
+      - logs:/data/logs:ro
+      - flume-state:/var/flume
+    depends_on:
+      hbase-init:
+        condition: service_completed_successfully
+
+  # Produces the events: appends fake access-log lines to a shared volume.
+  generator:
+    build: ./generator
+    image: flume-hbase-tutorial/generator
+    container_name: generator
+    environment:
+      RATE: "5" # events per second
+    volumes:
+      - logs:/data/logs
+
+volumes:
+  hbase-data:
+  flume-state:
+  logs:
