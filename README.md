@@ -1,4 +1,5 @@
 # Flume to HBase: a hands-on tutorial
+# Whiteboard : https://miro.com/app/board/uXjVETJY4mk=/?share_link_id=416966899554
 
 Stream log events through Apache Flume into an Apache HBase table, using Docker. You will run the pipeline, read every moving part, break it on purpose, and watch it recover.
 
